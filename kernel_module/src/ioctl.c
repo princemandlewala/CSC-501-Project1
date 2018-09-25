@@ -84,16 +84,20 @@ struct Container* check_if_container_exists(u64 value){
 	}else{
 		printk("uparwale ki meherbani ek container to hai \n");
 		struct Container *iterator = global_list_of_containers.head;
-		while(iterator->next != NULL || iterator->cid != value){
+		while(iterator->next != NULL){
+			if(iterator->cid == value){
+				printk("Eureka!!! container mil gaya \n");
+				return(iterator);
+			}
+			printk("container cid %d",iterator->cid);
 			iterator = iterator->next;
 		}
-		if(iterator->next == NULL && iterator->cid != value){
-			printk("manga hua container nai mila \n");
-			return(NULL);
-		}else{
-			printk("Eureka!!! container mil gaya \n");
+		if(iterator->cid == value){
+			printk("o mai la! yeh to last wala nikla");
 			return(iterator);
 		}
+		printk("O BC! Yeh to mila hi nai");
+		return(NULL);
 	}
 }
 /**
@@ -142,11 +146,17 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
     }
     printk("adding thread to list\n");
     struct Node* iterator = m->head;
-    while(iterator->next != NULL){
-	printk("Thread ID: %d",current->pid);
-	iterator = iterator->next;
+    printk("iterator created");
+    if(iterator!=NULL){
+    	while(iterator->next != NULL){
+		printk("Thread ID: %d",current->pid);
+		iterator = iterator->next;
+    	}
+	iterator->next = new_thread;
+    }else{
+	iterator = new_thread;
     }
-    iterator->next = new_thread;
+    printk("iterator ended");
     //printk("Current process is: %d", (int)getpid());
     printk("Current conatiner ID: %llu Process ID: %d Process Name: %s \n", pcontainerStruct->cid, current->pid,current->comm);
     return 0;
