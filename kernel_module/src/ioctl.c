@@ -48,6 +48,7 @@
 
 struct Node{
 	int pid;
+	struct task_struct *process;
 	struct Node* next;
 };
 
@@ -224,6 +225,46 @@ int delete_container(struct Container* container){
 	printk("hello 15 \n");
 	return(0);
 }
+
+struct Node* get_next_task(struct Container *container, int processToSwitch){
+        struct Node* iterator = container->head;
+	printk("called switch for container %llu",container->cid);
+	if(iterator == NULL){
+		printk("koi thread hi nai mili");
+		return(0);
+	}
+        while(iterator->pid != processToSwitch){
+                if(iterator->next == NULL){
+                        break;
+                }else{
+                        iterator = iterator->next;
+                }
+        }
+        if(iterator->next == NULL && iterator->pid == processToSwitch){
+		printk("current process = %d process to switch to %d",processToSwitch,container->head->pid);
+                return(container->head);
+        }else if(iterator->pid == processToSwitch){
+                return(iterator->next);
+        }
+        return(NULL);
+}
+
+struct Container* get_container_from_process(int processToSwitch){
+	struct Container* containerIterator = global_list_of_containers.head;
+	while(containerIterator!=NULL){
+		struct Node* nodeIterator = containerIterator->head;
+		while(nodeIterator!=NULL){
+			if(nodeIterator->pid == processToSwitch){
+				return(containerIterator);
+			}
+			nodeIterator = nodeIterator->next;
+		}
+		containerIterator = containerIterator->next;
+	}
+	if(containerIterator == NULL){
+		return(NULL);
+	}
+}
 /**
  * Delete the task in the container.
  * 
@@ -277,6 +318,7 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
     struct Node *new_thread;
     new_thread = kmalloc(sizeof(struct Node), GFP_KERNEL);
     new_thread->pid = current->pid;
+    new_thread->process = current;
     new_thread->next = NULL;
     struct Container *m =check_if_container_exists(pcontainerStruct->cid) ;
     if(m==NULL){
@@ -323,6 +365,18 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
     printk("In container switch\n");
     //printk("Current Process is: %d", (int) getpid());
     //printk("Container ID: %d", (int) user_cmd->cid);
+    struct processor_container_cmd *pcontainerStruct;
+    pcontainerStruct = kmalloc(sizeof(struct processor_container_cmd), GFP_KERNEL);
+    long cd = copy_from_user(pcontainerStruct, user_cmd, sizeof(struct processor_container_cmd));
+    struct Container *container_to_switch_in = get_container_from_process(current->pid);
+    
+    if(container_to_switch_in == NULL){
+	return(0);
+    }
+    struct Node* node_to_switch = get_next_task(container_to_switch_in, current->pid);
+    if(node_to_switch != NULL){
+    	printk("switching to %d",node_to_switch->pid);
+    }
     return 0;
 }
 
