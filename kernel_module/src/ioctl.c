@@ -280,6 +280,8 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
     long cd = copy_from_user(pcontainerStruct, user_cmd, sizeof(struct processor_container_cmd));
     struct Container* container_to_check_for = get_container(pcontainerStruct->cid);
     int m = 10;
+    struct Node* current_node = get_next_task(container_to_check_for,current->pid);
+    struct Node* node_to_schedule = current_node->next;
     if(container_to_check_for != NULL){
 	printk("papa zinda hai");
     	m = delete_task_from_container(container_to_check_for,current->pid);
@@ -295,6 +297,12 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
     if(are_there_any_process_in_container == 1){
 	delete_container(container_to_check_for);
 	printk("container akela bacha that, maar diya");
+    }else{
+	if(node_to_schedule == NULL){
+		wake_up_process(container_to_check_for->head->process);
+	}else{
+		wake_up_process(node_to_schedule->process);
+	}
     }
     return 0;
 }
@@ -311,6 +319,7 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
  */
 int processor_container_create(struct processor_container_cmd __user *user_cmd)
 {
+    bool firstStatus = false;
     struct processor_container_cmd *pcontainerStruct;
     pcontainerStruct = kmalloc(sizeof(struct processor_container_cmd), GFP_KERNEL);
     long cd = copy_from_user(pcontainerStruct, user_cmd, sizeof(struct processor_container_cmd));
@@ -322,6 +331,7 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
     new_thread->next = NULL;
     struct Container *m =check_if_container_exists(pcontainerStruct->cid) ;
     if(m==NULL){
+	firstStatus = true;
 	printk("creating new container\n");
 	struct Container *container_new;
     	container_new = kmalloc(sizeof(struct Container), GFP_KERNEL);
@@ -347,6 +357,11 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
 	m->head = new_thread;
 	mutex_unlock(&container_mutex);
 	//iterator = new_thread;
+    }
+    if(!firstStatus){
+	set_current_state(TASK_UNINTERRUPTIBLE);
+	wake_up_process(m->head->process);
+	schedule();
     }
     printk("iterator ended");
     //printk("Current process is: %d", (int)getpid());
@@ -376,7 +391,11 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
     struct Node* node_to_switch = get_next_task(container_to_switch_in, current->pid);
     if(node_to_switch != NULL){
     	printk("switching to %d",node_to_switch->pid);
+	set_current_state(TASK_UNINTERRUPTIBLE);
+	wake_up_process(node_to_switch->process);
+	schedule();
     }
+    
     return 0;
 }
 
