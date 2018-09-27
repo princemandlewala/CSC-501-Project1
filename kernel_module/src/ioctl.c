@@ -30,6 +30,7 @@
 ////////////////////////////////////////////////////////////////////////
 
 #include "processor_container.h"
+//#include "core.c"
 
 #include <asm/uaccess.h>
 #include <linux/slab.h>
@@ -47,6 +48,7 @@
 
 struct Node{
 	int pid;
+	struct task_struct *process;
 	struct Node* next;
 };
 
@@ -62,18 +64,28 @@ struct Container_List{
 
 struct Container_List global_list_of_containers;
 
+//mutex_init(container_mutex);
+//struct mutex container_mutex;
+static DEFINE_MUTEX(container_mutex);
+
+//#define DEFINE_MUTEX(container_mutex) container_mutex = __MUTEX_INITIALIZER(container_mutex) 
+
 int add_container_to_container_list(struct Container *new_container){
 	if(global_list_of_containers.head == NULL){
 		printk("No containers exist\n");
 		new_container->next = NULL;
+		mutex_lock(&container_mutex);
 		global_list_of_containers.head = new_container;
+		mutex_unlock(&container_mutex);
 	}else{
 		printk("At least 1 Container exist\n ");
 		struct Container *iterator = global_list_of_containers.head;
 		while(iterator->next != NULL){
 			iterator = iterator->next;
 		}
+		mutex_lock(&container_mutex);
 		iterator->next = new_container;
+		mutex_unlock(&container_mutex);
 	}
 }
 
@@ -100,6 +112,159 @@ struct Container* check_if_container_exists(u64 value){
 		return(NULL);
 	}
 }
+
+
+struct Container* get_container(u64 containerID){
+	struct Container* iterator = global_list_of_containers.head;
+	while(iterator->cid != containerID){
+		if(iterator->next == NULL){
+			break;
+		}else{
+			iterator = iterator->next;
+		}
+	}
+	if(iterator->cid == containerID){
+		return(iterator);
+	}else{
+		return(NULL);
+	}
+}
+
+int delete_task_from_container(struct Container* container, int processID){
+	struct Node* iterator = container->head;
+	struct Node* previous=NULL;
+	printk("hello 1\n");
+	if(iterator == NULL){
+		printk("sala koi node nai hai andar \n");
+	}
+	while(iterator->pid != processID){
+		printk("hello 2\n");
+		if(iterator->next == NULL){
+			printk("hello 3\n");
+			return(0);
+		}else{
+			previous = iterator;
+			iterator = iterator->next;
+			printk("hello 4\n");
+		}
+	}
+	if(previous == NULL && iterator->pid == processID){
+		printk("hello 5\n");
+		mutex_lock(&container_mutex);
+		container->head = iterator->next;
+		mutex_unlock(&container_mutex);
+		kfree((void *)iterator);
+		return(1);
+	}else if(iterator->next == NULL && iterator->pid == processID){
+		printk("hello 6\n");
+		mutex_lock(&container_mutex);
+		previous->next = NULL;
+		mutex_unlock(&container_mutex);
+		kfree((void *)iterator);
+		return(1);
+	}else if(iterator->pid == processID){
+		printk("hello 7\n");
+		mutex_lock(&container_mutex);
+		previous->next = iterator->next;
+		mutex_unlock(&container_mutex);
+		kfree((void *)iterator);
+		return(1);
+	}
+	printk("hello 8\n");
+	return(0);	
+}
+
+int check_if_no_process_in_container(struct Container* container){
+	if(container->head == NULL){
+		printk("container khali hai");
+		return(1);
+	}else{
+		printk("container me koi hai");
+		return(0);
+	}
+}
+
+
+int delete_container(struct Container* container){
+	struct Container* iterator = global_list_of_containers.head;
+	struct Container* previous = NULL;
+	printk("hello 9 \n");
+	while(iterator->cid != container->cid){
+		if(iterator->next == NULL){
+			printk("hello 10 \n");
+			return(0);
+		}else{
+			previous = iterator;
+			iterator = iterator->next;
+			printk("hello 11 \n");
+		}
+	}
+	if(previous == NULL && iterator->cid == container->cid){
+		printk("hello 12 \n");
+		mutex_lock(&container_mutex);
+		global_list_of_containers.head = iterator->next;
+		mutex_unlock(&container_mutex);
+		printk("%llu ko maar diya",container->cid);
+		kfree((void *)iterator);
+		return(1);
+	}else if(iterator->next == NULL && iterator->cid == container->cid){
+		printk("hello 13 \n");
+		mutex_lock(&container_mutex);
+		previous->next = NULL;
+		mutex_unlock(&container_mutex);
+		kfree((void *)iterator);
+		return(1);
+	}else if(iterator->cid == container->cid){
+		printk("hello 14 \n");
+		mutex_lock(&container_mutex);
+		previous->next = iterator->next;
+		mutex_unlock(&container_mutex);
+		kfree((void *)iterator);
+		return(1);
+	}
+	printk("hello 15 \n");
+	return(0);
+}
+
+struct Node* get_next_task(struct Container *container, int processToSwitch){
+        struct Node* iterator = container->head;
+	printk("called switch for container %llu",container->cid);
+	if(iterator == NULL){
+		printk("koi thread hi nai mili");
+		return(0);
+	}
+        while(iterator->pid != processToSwitch){
+                if(iterator->next == NULL){
+                        break;
+                }else{
+                        iterator = iterator->next;
+                }
+        }
+        if(iterator->next == NULL && iterator->pid == processToSwitch){
+		printk("current process = %d process to switch to %d",processToSwitch,container->head->pid);
+                return(container->head);
+        }else if(iterator->pid == processToSwitch){
+                return(iterator->next);
+        }
+        return(NULL);
+}
+
+struct Container* get_container_from_process(int processToSwitch){
+	struct Container* containerIterator = global_list_of_containers.head;
+	while(containerIterator!=NULL){
+		struct Node* nodeIterator = containerIterator->head;
+		while(nodeIterator!=NULL){
+			if(nodeIterator->pid == processToSwitch){
+				return(containerIterator);
+			}
+			nodeIterator = nodeIterator->next;
+		}
+		containerIterator = containerIterator->next;
+	}
+	if(containerIterator == NULL){
+		return(NULL);
+	}
+}
 /**
  * Delete the task in the container.
  * 
@@ -110,6 +275,27 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 {
     printk("In container delete \n");
     //printk("Current process is %d",(int) getpid() );
+    struct processor_container_cmd *pcontainerStruct;
+    pcontainerStruct = kmalloc(sizeof(struct processor_container_cmd), GFP_KERNEL);
+    long cd = copy_from_user(pcontainerStruct, user_cmd, sizeof(struct processor_container_cmd));
+    struct Container* container_to_check_for = get_container(pcontainerStruct->cid);
+    int m = 10;
+    if(container_to_check_for != NULL){
+	printk("papa zinda hai");
+    	m = delete_task_from_container(container_to_check_for,current->pid);
+    }else{
+	printk("task ka baap hi nai mila");
+    }
+    if(m==1){
+	printk("task ka khoon karva diya");
+    }else if(m==0){
+	printk("task mila hi nai marne ke liye");   
+    }
+    int are_there_any_process_in_container = check_if_no_process_in_container(container_to_check_for);
+    if(are_there_any_process_in_container == 1){
+	delete_container(container_to_check_for);
+	printk("container akela bacha that, maar diya");
+    }
     return 0;
 }
 
@@ -132,6 +318,7 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
     struct Node *new_thread;
     new_thread = kmalloc(sizeof(struct Node), GFP_KERNEL);
     new_thread->pid = current->pid;
+    new_thread->process = current;
     new_thread->next = NULL;
     struct Container *m =check_if_container_exists(pcontainerStruct->cid) ;
     if(m==NULL){
@@ -152,9 +339,14 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
 		printk("Thread ID: %d",current->pid);
 		iterator = iterator->next;
     	}
+	mutex_lock(&container_mutex);
 	iterator->next = new_thread;
+	mutex_unlock(&container_mutex);
     }else{
-	iterator = new_thread;
+	mutex_lock(&container_mutex);
+	m->head = new_thread;
+	mutex_unlock(&container_mutex);
+	//iterator = new_thread;
     }
     printk("iterator ended");
     //printk("Current process is: %d", (int)getpid());
@@ -173,6 +365,18 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
     printk("In container switch\n");
     //printk("Current Process is: %d", (int) getpid());
     //printk("Container ID: %d", (int) user_cmd->cid);
+    struct processor_container_cmd *pcontainerStruct;
+    pcontainerStruct = kmalloc(sizeof(struct processor_container_cmd), GFP_KERNEL);
+    long cd = copy_from_user(pcontainerStruct, user_cmd, sizeof(struct processor_container_cmd));
+    struct Container *container_to_switch_in = get_container_from_process(current->pid);
+    
+    if(container_to_switch_in == NULL){
+	return(0);
+    }
+    struct Node* node_to_switch = get_next_task(container_to_switch_in, current->pid);
+    if(node_to_switch != NULL){
+    	printk("switching to %d",node_to_switch->pid);
+    }
     return 0;
 }
 
